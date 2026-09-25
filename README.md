@@ -2,6 +2,8 @@
 
 Personal portfolio website for **Vedant Milind Nemade**, Civil Engineering student and road-construction Site Supervisor (Pooja Construction, Bhusawal).
 
+![Portfolio preview](assets/preview.png)
+
 A static site (HTML, CSS and a little JavaScript) with no build step.
 
 ## Run locally
