@@ -174,3 +174,21 @@ def test_cli_backtest_reads_csv(tmp_path, capsys):
     main(["backtest", str(csv), "--out", str(tmp_path / "t.csv")])
     assert '"sessions"' in capsys.readouterr().out
     assert (tmp_path / "t_setups.csv").exists()
+
+
+def test_mt5_backtest_command_with_fake_terminal(monkeypatch, capsys):
+    import sys
+    import types
+    bars = synthetic_minutes(20).tz_convert("Europe/Athens").tz_localize(None)
+    secs = (bars.index - pd.Timestamp("1970-01-01")) // pd.Timedelta("1s")  # MT5 uses epoch seconds
+    rates = bars.assign(time=secs, tick_volume=1).reset_index(drop=True)
+    fake = types.SimpleNamespace(
+        TIMEFRAME_M1=1, initialize=lambda **k: True, symbol_select=lambda *a: True,
+        last_error=lambda: None,
+        copy_rates_range=lambda sym, tf, a, b: rates[(rates.time >= pd.Timestamp(a).timestamp()) &
+                                                    (rates.time < pd.Timestamp(b).timestamp())].to_records(index=False))
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+    from sfx_bot.__main__ import main
+    main(["mt5-backtest", "--server-tz", "Europe/Athens", "--start", "2024-01-01", "--end", "2024-02-01"])
+    out = capsys.readouterr().out
+    assert f"XAUUSD: {len(bars)} M1 bars" in out and '"sessions"' in out

@@ -56,7 +56,30 @@ class MT5Broker:
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, bars)  # skip forming bar
         if rates is None or len(rates) == 0:
             raise RuntimeError(f"no M1 data for {symbol}: {mt5.last_error()}")
-        df = pd.DataFrame(rates)
+        return self._to_frame(pd.DataFrame(rates), server_tz)
+
+    def history(self, symbol: str, start: datetime, end: datetime, server_tz: str) -> pd.DataFrame:
+        """M1 bars between two dates (server time), for backtesting.
+
+        MT5 only returns as many bars as the terminal has downloaded: raise
+        Tools > Options > Charts > "Max bars in chart" and scroll the M1 chart
+        back (or run the Strategy Tester once) to pull older history.
+        """
+        mt5 = self.mt5
+        mt5.symbol_select(symbol, True)
+        frames, day = [], start
+        while day < end:  # in monthly chunks, large single requests can fail
+            nxt = min(day + timedelta(days=31), end)
+            rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, day, nxt)
+            if rates is not None and len(rates):
+                frames.append(pd.DataFrame(rates))
+            day = nxt
+        if not frames:
+            raise RuntimeError(f"no M1 history for {symbol} {start:%Y-%m-%d}..{end:%Y-%m-%d}: {mt5.last_error()}")
+        return self._to_frame(pd.concat(frames), server_tz)
+
+    @staticmethod
+    def _to_frame(df: pd.DataFrame, server_tz: str) -> pd.DataFrame:
         # MT5 stamps bars with the server's wall-clock time.
         df.index = pd.to_datetime(df["time"], unit="s").dt.tz_localize(server_tz, ambiguous="NaT",
                                                                          nonexistent="shift_forward")

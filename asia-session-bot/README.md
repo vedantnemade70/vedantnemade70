@@ -52,6 +52,36 @@ skipped) to `trades_setups.csv`, so you can check sessions against your charts.
 `python -m sfx_bot demo` runs the same pipeline on random synthetic prices. It's
 a smoke test only; the numbers mean nothing.
 
+## Backtest in MetaTrader 5
+
+There are two ways to test on your broker's own data.
+
+**A. Strategy Tester (Expert Advisor).** `mt5/SFX_AsiaSession.mq5` is the same
+strategy written in MQL5.
+
+1. MT5 → **File → Open Data Folder** → copy the file into `MQL5/Experts/`.
+2. Open it in MetaEditor (F4) and press **Compile** (F7).
+3. **View → Strategy Tester**: Expert `SFX_AsiaSession`, symbol `XAUUSD`, any
+   timeframe, model **1 minute OHLC** (or **Every tick based on real ticks**),
+   date range such as the last 12 months, deposit 10,000.
+4. Set the input **Server time minus NY time**. For most GMT+2/+3 brokers this is
+   `7`. To check: if the chart shows 03:00 when it is 20:00 in New York, it's 7.
+5. Press Start. The **Backtest** tab shows profit, win rate and drawdown, and the
+   **Journal** logs each session's levels, purge and orders. Right-click the
+   results → **Report → HTML** to save them.
+
+**B. Python engine on MT5 history (Windows).**
+
+```bash
+pip install MetaTrader5
+python -m sfx_bot mt5-backtest --symbol XAUUSD --server-tz Europe/Athens --start 2025-01-01 \
+    --out trades.csv --save-csv xauusd_m1.csv
+```
+
+This downloads M1 bars from the running terminal and prints the stats, a
+breakdown by month and the trades. If it finds too little history, raise
+**Tools → Options → Charts → Max bars in chart** and scroll the M1 chart back.
+
 ## Live on MetaTrader 5
 
 ```bash
@@ -82,7 +112,9 @@ sfx_bot/
   config.py     all strategy settings and their defaults
   strategy.py   the rules: liquidity -> purge -> MSS -> FVG -> entry (scan_session)
   backtest.py   trade simulation and statistics
-  live.py       MetaTrader 5 runner
+  live.py       MetaTrader 5 runner and history download
+mt5/
+  SFX_AsiaSession.mq5   Expert Advisor for the MT5 Strategy Tester
   data.py       CSV loading, resampling, synthetic data
 tests/          scenario tests (sell, mirrored buy, invalid sessions, no look-ahead, live bot)
 ```

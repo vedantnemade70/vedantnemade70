@@ -42,6 +42,11 @@ def report(m1: pd.DataFrame, cfg: StrategyConfig, a) -> None:
     if len(trades):
         cols = ["session", "side", "entry_time", "entry", "sl", "tp", "exit", "reason", "r"]
         print(trades[cols].tail(a.show).to_string(index=False))
+    if len(trades):
+        month = pd.to_datetime(trades["session"]).dt.strftime("%Y-%m")
+        monthly = trades.groupby(month)["r"].agg(trades="count", total_R="sum",
+                                                   win_rate=lambda r: round(100 * (r > 0).mean(), 1))
+        print("\nBy month:\n" + monthly.round(2).to_string())
     if a.out:
         trades.to_csv(a.out, index=False)
         setups.to_csv(a.out.replace(".csv", "") + "_setups.csv", index=False)
@@ -61,7 +66,18 @@ def main(argv=None) -> None:
     demo.add_argument("--days", type=int, default=120)
     demo.add_argument("--seed", type=int, default=7)
 
-    for p in (bt, demo):
+    mb = sub.add_parser("mt5-backtest", help="download M1 history from your MT5 terminal and backtest it")
+    mb.add_argument("--symbol", default="XAUUSD")
+    mb.add_argument("--server-tz", required=True, help="time zone of the broker's chart times, e.g. Europe/Athens")
+    mb.add_argument("--start", required=True, help="first day, YYYY-MM-DD")
+    mb.add_argument("--end", default=None, help="last day, YYYY-MM-DD (default today)")
+    mb.add_argument("--save-csv", help="also save the downloaded M1 bars here")
+    mb.add_argument("--login", type=int)
+    mb.add_argument("--password")
+    mb.add_argument("--server")
+    mb.add_argument("--terminal-path")
+
+    for p in (bt, demo, mb):
         p.add_argument("--risk", type=float, default=1.0, help="%% risk per trade for the equity stats")
         p.add_argument("--out", help="write trades to this CSV")
         p.add_argument("--show", type=int, default=20, help="how many recent trades to print")
@@ -89,6 +105,17 @@ def main(argv=None) -> None:
         report(load_csv(a.csv, a.data_tz, a.date_format), cfg, a)
     elif a.cmd == "demo":
         report(synthetic_minutes(a.days, seed=a.seed), cfg, a)
+    elif a.cmd == "mt5-backtest":
+        from datetime import datetime
+        from .live import MT5Broker
+        broker = MT5Broker(a.login, a.password, a.server, a.terminal_path)
+        end = datetime.fromisoformat(a.end) if a.end else datetime.now()
+        m1 = broker.history(a.symbol, datetime.fromisoformat(a.start), end, a.server_tz)
+        print(f"{a.symbol}: {len(m1)} M1 bars, {m1.index[0]} .. {m1.index[-1]}")
+        if a.save_csv:
+            # UTC keeps one offset for the whole file, so load_csv can read it back.
+            m1.tz_convert("UTC").rename_axis("time").to_csv(a.save_csv)
+        report(m1, cfg, a)
     else:
         from .live import LiveConfig, MT5Broker, run
         broker = MT5Broker(a.login, a.password, a.server, a.terminal_path)
