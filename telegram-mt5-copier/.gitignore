@@ -1,0 +1,7 @@
+.env
+*.session
+*.session-journal
+copier.log
+seen_messages.json
+__pycache__/
+.pytest_cache/
