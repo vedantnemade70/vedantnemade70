@@ -13,6 +13,25 @@ MAGIC = 260705
 COMMENT = "tg-copier"
 
 
+METALS = ("XAU", "XAG", "XPT", "XPD", "GOLD", "SILVER")
+OILS = ("USOIL", "UKOIL", "WTI", "BRENT", "XTI", "XBR", "OIL")
+CRYPTO = ("BTC", "ETH", "LTC", "XRP", "SOL")
+
+
+def sl_category(symbol: str) -> str:
+    """Which SL_PIPS_* setting applies to a symbol."""
+    s = symbol.upper()
+    if s.startswith(METALS):
+        return "metal"
+    if any(o in s for o in OILS):
+        return "oil"
+    if s.startswith(CRYPTO):
+        return "crypto"
+    if len(s) >= 6 and s[:6].isalpha():
+        return "forex"
+    return "index"
+
+
 class Trader:
     def __init__(self, cfg):
         import MetaTrader5 as mt5  # Windows-only package, imported lazily
@@ -74,9 +93,12 @@ class Trader:
             price = sig.entry
 
         tps = sig.tps[: cfg.max_tps] if sig.tps else [None]
-        sl = sig.sl
-        if sl is None and cfg.default_sl_points:
-            sl = self._default_sl(buy, price, info)
+        sl = self._stop_loss(sig, buy, price, info)
+        spread = tick.ask - tick.bid
+        if sl and abs(price - sl) <= spread:
+            log.warning("%s SL %s is only %s from price, inside the %s spread; the broker will likely reject it. "
+                        "Raise the SL_PIPS_* setting for this symbol.", symbol, round(sl, info.digits),
+                        round(abs(price - sl), info.digits), round(spread, info.digits))
 
         total_volume = self._volume(info, price, sl)
         per_trade = self._round_volume(info, total_volume / len(tps))
@@ -149,9 +171,19 @@ class Trader:
             return False
         return True
 
-    def _default_sl(self, buy: bool, price: float, info) -> float:
-        dist = self.cfg.default_sl_points * info.point
-        return price - dist if buy else price + dist
+    def _stop_loss(self, sig: Signal, buy: bool, price: float, info) -> float | None:
+        """SL_MODE=fixed: always our pips; missing: ours only if the signal has none; signal: theirs only."""
+        cfg = self.cfg
+        pips = cfg.sl_pips.get(sl_category(sig.symbol), 0)
+        use_ours = pips > 0 and (cfg.sl_mode == "fixed" or (cfg.sl_mode == "missing" and sig.sl is None))
+        if not use_ours:
+            return sig.sl
+        # 1 pip = PIP_POINTS points for every symbol (10 by default, like EURUSD: 0.00010).
+        dist = pips * cfg.pip_points * info.point
+        sl = price - dist if buy else price + dist
+        log.info("%s SL: %g pips = %s price distance -> SL %s (channel SL was %s)",
+                 sig.symbol, pips, round(dist, info.digits), round(sl, info.digits), sig.sl)
+        return sl
 
     def _order_type(self, sig: Signal):
         mt5 = self.mt5

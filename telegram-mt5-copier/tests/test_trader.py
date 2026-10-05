@@ -41,7 +41,7 @@ def fake_mt5(trade_mode=0):
 
 def cfg(**over):
     base = dict(mt5_login=1, mt5_password="x", mt5_server="Demo", mt5_path=r"C:\MT5-Copier\terminal64.exe", lot_size=0.03, risk_percent=0,
-                max_lot=1.0, max_tps=3, default_sl_points=0, max_slippage_points=30, symbol_suffix="", dry_run=False)
+                max_lot=1.0, max_tps=3, sl_mode="signal", sl_pips={}, pip_points=10, max_slippage_points=30, symbol_suffix="", dry_run=False)
     base.update(over)
     return NS(**base)
 
@@ -96,3 +96,27 @@ def test_uses_its_own_portable_terminal():
     Trader(cfg()).connect()
     args, kwargs = m.init_calls[0]
     assert args == (r"C:\MT5-Copier\terminal64.exe",) and kwargs["portable"] is True
+
+
+def test_fixed_sl_in_pips_like_eurusd():
+    m = fake_mt5()
+    from trader import Trader
+    c = cfg(sl_mode="fixed", sl_pips={"metal": 30, "forex": 20})
+    # Gold quoted with 2 digits: 30 pips = 300 points = 3.00 below the 2350.20 ask.
+    Trader(c).execute(Signal("XAUUSD", "BUY", "MARKET", None, 2340.0, [2360.0]))
+    assert m.sent[0]["sl"] == 2347.2
+
+
+def test_missing_mode_keeps_channel_sl():
+    m = fake_mt5()
+    from trader import Trader
+    Trader(cfg(sl_mode="missing", sl_pips={"metal": 30})).execute(
+        Signal("XAUUSD", "SELL", "LIMIT", 2360.0, 2370.0, [2340.0]))
+    assert m.sent[0]["sl"] == 2370.0
+
+
+def test_sl_categories():
+    from trader import sl_category
+    assert [sl_category(s) for s in ["EURUSD", "USDJPY", "XAUUSD", "XAGUSD", "USOIL", "UKOIL",
+                                     "BTCUSD", "ETHUSD", "US30", "NAS100"]] == \
+        ["forex", "forex", "metal", "metal", "oil", "oil", "crypto", "crypto", "index", "index"]

@@ -71,6 +71,9 @@ Start with `DRY_RUN=true` and watch `copier.log` for a few signals. When the ord
 and restart. Keep this window and the `C:\MT5-Copier` MT5 open; the bot only copies signals while it's running.
 
 ## Tuning
+- **Stop loss:** by default (`SL_MODE=fixed`) every trade gets your own SL, measured from the entry price: forex 20 pips,
+  metals 30, oil 30, crypto 30. One pip is 10 MT5 points for every symbol, as on EURUSD, so XAUUSD 30 pips = 3.00.
+  Indices use the channel's SL (`SL_PIPS_INDEX=0`). Set `SL_MODE=missing` to keep the channel's SL when it gives one.
 - **Lot size:** `LOT_SIZE` for fixed lots, or `RISK_PERCENT` to size from the SL distance and your balance.
 - **Symbol names:** if your broker uses `XAUUSD.m`, set `SYMBOL_SUFFIX=.m`. Add channel nicknames
   (e.g. `"YEN": "USDJPY"`) to `ALIASES` in `signal_parser.py`.

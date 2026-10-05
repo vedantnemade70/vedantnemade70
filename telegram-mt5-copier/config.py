@@ -40,7 +40,9 @@ class Config:
     risk_percent: float
     max_lot: float
     max_tps: int
-    default_sl_points: int
+    sl_mode: str
+    sl_pips: dict
+    pip_points: int
     max_slippage_points: int
     symbol_suffix: str
     max_signal_age_sec: int
@@ -67,7 +69,15 @@ def load_config(need_mt5: bool = True) -> Config:
         risk_percent=float(os.getenv("RISK_PERCENT", "0")),
         max_lot=float(os.getenv("MAX_LOT", "1.0")),
         max_tps=int(os.getenv("MAX_TPS", "3")),
-        default_sl_points=int(os.getenv("DEFAULT_SL_POINTS", "0")),
+        sl_mode=os.getenv("SL_MODE", "fixed").strip().lower(),
+        sl_pips={
+            "forex": float(os.getenv("SL_PIPS_FOREX", "20")),
+            "metal": float(os.getenv("SL_PIPS_METAL", "30")),
+            "oil": float(os.getenv("SL_PIPS_OIL", "30")),
+            "crypto": float(os.getenv("SL_PIPS_CRYPTO", "30")),
+            "index": float(os.getenv("SL_PIPS_INDEX", "0")),
+        },
+        pip_points=int(os.getenv("PIP_POINTS", "10")),
         max_slippage_points=int(os.getenv("MAX_SLIPPAGE_POINTS", "30")),
         symbol_suffix=os.getenv("SYMBOL_SUFFIX", ""),
         max_signal_age_sec=int(os.getenv("MAX_SIGNAL_AGE_SEC", "120")),
