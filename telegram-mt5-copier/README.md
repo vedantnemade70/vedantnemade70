@@ -62,6 +62,13 @@ Check that the channel's message format is understood:
 python main.py --test "XAUUSD BUY @ 2350-2347 SL 2340 TP1 2355 TP2 2360"
 ```
 
+## Check the setup
+```bat
+python main.py --check
+```
+Tests MT5, Telegram and the channel one at a time, marks each `[OK]` or `[FAIL]` with what to fix,
+and shows how the bot reads the channel's last 5 messages.
+
 ## Run
 ```bat
 python main.py

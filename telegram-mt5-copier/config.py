@@ -9,18 +9,37 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
-load_dotenv(HERE / ".env")
+ENV_FILE = HERE / ".env"
+load_dotenv(ENV_FILE)
 
 
-def _get(name: str, default: str | None = None) -> str:
+def _env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
-    if value is None or value == "":
+    # Drop notes pasted from the setup guide ("12345 <- your api_id") and stray quotes/spaces.
+    return value.split("\u2190")[0].split("<-")[0].strip().strip("'\"").strip()
+
+
+def _get(name: str) -> str:
+    value = _env(name)
+    if not value:
+        if not ENV_FILE.exists():
+            hint = (" Found .env.txt: rename it to .env (Notepad added .txt)."
+                    if (HERE / ".env.txt").exists() else " Run: copy .env.example .env")
+            raise SystemExit(f"No .env file in {HERE}.{hint}")
         raise SystemExit(f"Missing setting {name} in .env (see .env.example)")
     return value
 
 
+def _num(name: str, default: str | None = None, kind=float):
+    raw = _get(name) if default is None else (_env(name, default) or default)
+    try:
+        return kind(raw)
+    except ValueError:
+        raise SystemExit(f"{name} in .env must be a number, got {raw!r}") from None
+
+
 def _bool(name: str, default: str) -> bool:
-    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+    return _env(name, default).lower() in ("1", "true", "yes", "on")
 
 
 @dataclass
@@ -56,30 +75,30 @@ def _channel(value: str) -> str | int:
 
 def load_config(need_mt5: bool = True) -> Config:
     return Config(
-        tg_api_id=int(_get("TG_API_ID")),
+        tg_api_id=_num("TG_API_ID", kind=int),
         tg_api_hash=_get("TG_API_HASH"),
         tg_phone=_get("TG_PHONE"),
-        tg_channels=[_channel(c) for c in os.getenv("TG_CHANNELS", "").split(",") if c.strip()],
-        tg_session=str(HERE / os.getenv("TG_SESSION", "copier")),
-        mt5_login=int(_get("MT5_LOGIN")) if need_mt5 else 0,
+        tg_channels=[_channel(c) for c in _env("TG_CHANNELS").split(",") if c.strip()],
+        tg_session=str(HERE / (_env("TG_SESSION") or "copier")),
+        mt5_login=_num("MT5_LOGIN", kind=int) if need_mt5 else 0,
         mt5_password=_get("MT5_PASSWORD") if need_mt5 else "",
         mt5_server=_get("MT5_SERVER") if need_mt5 else "",
         mt5_path=_get("MT5_PATH") if need_mt5 else "",
-        lot_size=float(os.getenv("LOT_SIZE", "0.01")),
-        risk_percent=float(os.getenv("RISK_PERCENT", "0")),
-        max_lot=float(os.getenv("MAX_LOT", "1.0")),
-        max_tps=int(os.getenv("MAX_TPS", "3")),
-        sl_mode=os.getenv("SL_MODE", "fixed").strip().lower(),
+        lot_size=_num("LOT_SIZE", "0.01"),
+        risk_percent=_num("RISK_PERCENT", "0"),
+        max_lot=_num("MAX_LOT", "1.0"),
+        max_tps=_num("MAX_TPS", "3", int),
+        sl_mode=_env("SL_MODE", "fixed").strip().lower(),
         sl_pips={
-            "forex": float(os.getenv("SL_PIPS_FOREX", "20")),
-            "metal": float(os.getenv("SL_PIPS_METAL", "30")),
-            "oil": float(os.getenv("SL_PIPS_OIL", "30")),
-            "crypto": float(os.getenv("SL_PIPS_CRYPTO", "30")),
-            "index": float(os.getenv("SL_PIPS_INDEX", "0")),
+            "forex": _num("SL_PIPS_FOREX", "20"),
+            "metal": _num("SL_PIPS_METAL", "30"),
+            "oil": _num("SL_PIPS_OIL", "30"),
+            "crypto": _num("SL_PIPS_CRYPTO", "30"),
+            "index": _num("SL_PIPS_INDEX", "0"),
         },
-        pip_points=int(os.getenv("PIP_POINTS", "10")),
-        max_slippage_points=int(os.getenv("MAX_SLIPPAGE_POINTS", "30")),
-        symbol_suffix=os.getenv("SYMBOL_SUFFIX", ""),
-        max_signal_age_sec=int(os.getenv("MAX_SIGNAL_AGE_SEC", "120")),
+        pip_points=_num("PIP_POINTS", "10", int),
+        max_slippage_points=_num("MAX_SLIPPAGE_POINTS", "30", int),
+        symbol_suffix=_env("SYMBOL_SUFFIX", ""),
+        max_signal_age_sec=_num("MAX_SIGNAL_AGE_SEC", "120", int),
         dry_run=_bool("DRY_RUN", "true"),
     )
