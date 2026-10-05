@@ -25,7 +25,9 @@ class Trader:
     def connect(self) -> None:
         mt5, cfg = self.mt5, self.cfg
         kwargs = {"login": cfg.mt5_login, "password": cfg.mt5_password, "server": cfg.mt5_server}
-        ok = mt5.initialize(cfg.mt5_path, **kwargs) if cfg.mt5_path else mt5.initialize(**kwargs)
+        # Always start our own terminal (MT5_PATH, portable) so an MT5 you already have running
+        # keeps its own account and is never switched over.
+        ok = mt5.initialize(cfg.mt5_path, portable=True, **kwargs)
         if not ok:
             raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
 
@@ -40,8 +42,8 @@ class Trader:
             )
         if not mt5.terminal_info().trade_allowed:
             log.warning("Algo trading is disabled in the MT5 terminal. Enable the 'Algo Trading' button.")
-        log.info("Connected to demo account %s on %s, balance %.2f %s",
-                 info.login, info.server, info.balance, info.currency)
+        log.info("Connected to demo account %s on %s, balance %.2f %s (terminal: %s)",
+                 info.login, info.server, info.balance, info.currency, mt5.terminal_info().path)
 
     def shutdown(self) -> None:
         self.mt5.shutdown()

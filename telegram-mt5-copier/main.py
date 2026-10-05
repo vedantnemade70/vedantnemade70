@@ -48,6 +48,28 @@ async def list_chats(cfg) -> None:
             print(f"{dialog.id:>16}  {'@' + username if username else '':<28} {dialog.name}")
 
 
+async def resolve_channels(client, wanted: list) -> list:
+    """Turn channel names like "topg vip" into chat IDs; @usernames and IDs pass through."""
+    names = [w for w in wanted if isinstance(w, str) and not w.startswith("@")]
+    resolved = [w for w in wanted if w not in names]
+    if not names:
+        return resolved
+    dialogs = [d async for d in client.iter_dialogs()]
+    for name in names:
+        key = name.casefold().strip()
+        exact = [d for d in dialogs if d.name.casefold().strip() == key]
+        matches = exact or [d for d in dialogs if key in d.name.casefold()]
+        if not matches:
+            raise SystemExit(f"No Telegram chat named {name!r}. Run `python main.py --list-chats` "
+                             "and put the exact name or ID in TG_CHANNELS.")
+        if len(matches) > 1:
+            listing = "\n".join(f"  {d.id}  {d.name}" for d in matches)
+            raise SystemExit(f"Several chats match {name!r}; put one ID in TG_CHANNELS:\n{listing}")
+        log.info("Channel %r -> %s (id %s)", name, matches[0].name, matches[0].id)
+        resolved.append(matches[0].id)
+    return resolved
+
+
 async def run(cfg) -> None:
     from telethon import TelegramClient, events
 
@@ -65,7 +87,6 @@ async def run(cfg) -> None:
     seen = load_seen()
     client = TelegramClient(cfg.tg_session, cfg.tg_api_id, cfg.tg_api_hash)
 
-    @client.on(events.NewMessage(chats=cfg.tg_channels))
     async def on_message(event):
         key = f"{event.chat_id}:{event.id}"
         text = event.raw_text or ""
@@ -90,6 +111,8 @@ async def run(cfg) -> None:
             log.exception("Failed to execute signal %s", key)
 
     await client.start(phone=cfg.tg_phone)
+    channels = await resolve_channels(client, cfg.tg_channels)
+    client.add_event_handler(on_message, events.NewMessage(chats=channels))
     mode = "DRY RUN (no orders sent)" if cfg.dry_run else "LIVE on demo account"
     log.info("Listening to %s - %s", cfg.tg_channels, mode)
     try:

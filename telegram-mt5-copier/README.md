@@ -19,29 +19,43 @@ Safety checks:
 - `DRY_RUN=true` (the default) only logs what it would do.
 
 ## Requirements
-- **Windows** (or a Windows VPS) with the **MT5 terminal installed** and logged in to your demo account.
-  The `MetaTrader5` Python package only works on Windows, next to a running terminal.
+- **Windows** (or a Windows VPS) with **MetaTrader 5 installed**. The `MetaTrader5` Python package only works on Windows.
 - Python 3.10+
-- In MT5, turn on **Algo Trading** (toolbar button) and check *Tools → Options → Expert Advisors → Allow algorithmic trading*.
 
 ## Setup
+
+### 1. Give the bot its own MT5 (your running MT5 is left alone)
+The bot runs a **separate copy of MT5** in `C:\MT5-Copier` with its own new demo account. Your normal MT5 keeps
+running on its usual account and is never switched or logged out.
+
 ```bat
 cd telegram-mt5-copier
+setup_mt5_copy.bat
+```
+If your MT5 came from a broker and lives somewhere else, pass that folder:
+`setup_mt5_copy.bat "C:\Program Files\XM Global MT5"`.
+
+A second MT5 window opens. **In that new window**:
+1. *File → Open an Account*, pick a demo server (e.g. *MetaQuotes-Demo*, or your broker's demo), *Next*.
+2. Choose **Open a demo account**, enter a name/email, pick a deposit (e.g. 10000) and leverage, tick the agreement, *Next*.
+3. Note the **Login**, **Password** and **Server** it shows.
+4. Click the **Algo Trading** button in the toolbar so it turns green.
+
+### 2. Configure
+```bat
 python -m pip install -r requirements.txt
 copy .env.example .env
 ```
 Fill in `.env`:
 - `TG_API_ID` / `TG_API_HASH`: from https://my.telegram.org → *API development tools*.
 - `TG_PHONE`: your Telegram phone number, with country code.
-- `MT5_LOGIN` / `MT5_PASSWORD` / `MT5_SERVER`: your demo account details.
+- `TG_CHANNELS`: already set to `topg vip`. The bot finds the channel by name (case doesn't matter).
+- `MT5_LOGIN` / `MT5_PASSWORD` / `MT5_SERVER`: the **new** demo account from step 1.
+- `MT5_PATH`: leave as `C:\MT5-Copier\terminal64.exe`. The bot refuses to start without it, so it can't touch your other MT5.
 
-Find the channel:
-```bat
-python main.py --list-chats
-```
-The first time, Telegram sends you a login code. Enter it in the terminal (and your 2FA password if you have one).
+The first time you start the bot, Telegram sends you a login code. Enter it in the terminal (and your 2FA password if you have one).
 This creates `copier.session`. **Keep it private**: it gives access to your Telegram account.
-Put the channel's `@username` or numeric ID in `TG_CHANNELS`.
+If the bot says it can't find "topg vip", or that several chats match, run `python main.py --list-chats` and put the channel's numeric ID in `TG_CHANNELS`.
 
 Check that the channel's message format is understood:
 ```bat
@@ -52,8 +66,9 @@ python main.py --test "XAUUSD BUY @ 2350-2347 SL 2340 TP1 2355 TP2 2360"
 ```bat
 python main.py
 ```
+On startup the log shows the account and terminal it connected to. Check it's the new demo login in `C:\MT5-Copier`.
 Start with `DRY_RUN=true` and watch `copier.log` for a few signals. When the orders look right, set `DRY_RUN=false`
-and restart. Keep the window (and MT5) open; the bot only copies signals while it's running.
+and restart. Keep this window and the `C:\MT5-Copier` MT5 open; the bot only copies signals while it's running.
 
 ## Tuning
 - **Lot size:** `LOT_SIZE` for fixed lots, or `RISK_PERCENT` to size from the SL distance and your balance.

@@ -19,11 +19,12 @@ def fake_mt5(trade_mode=0):
     )
     vars(m).update(consts)
     m.sent = []
-    m.initialize = lambda *a, **k: True
+    m.init_calls = []
+    m.initialize = lambda *a, **k: m.init_calls.append((a, k)) or True
     m.shutdown = lambda: None
     m.last_error = lambda: (0, "")
     m.account_info = lambda: NS(login=1, server="Demo", balance=10000.0, currency="USD", trade_mode=trade_mode)
-    m.terminal_info = lambda: NS(trade_allowed=True)
+    m.terminal_info = lambda: NS(trade_allowed=True, path=r"C:\MT5-Copier")
     m.symbol_info = lambda name: NS(point=0.01, digits=2, volume_min=0.01, volume_step=0.01, volume_max=100,
                                     trade_tick_size=0.01, trade_tick_value=1.0, filling_mode=2) if name == "XAUUSD" else None
     m.symbol_select = lambda name, on: True
@@ -39,7 +40,7 @@ def fake_mt5(trade_mode=0):
 
 
 def cfg(**over):
-    base = dict(mt5_login=1, mt5_password="x", mt5_server="Demo", mt5_path="", lot_size=0.03, risk_percent=0,
+    base = dict(mt5_login=1, mt5_password="x", mt5_server="Demo", mt5_path=r"C:\MT5-Copier\terminal64.exe", lot_size=0.03, risk_percent=0,
                 max_lot=1.0, max_tps=3, default_sl_points=0, max_slippage_points=30, symbol_suffix="", dry_run=False)
     base.update(over)
     return NS(**base)
@@ -87,3 +88,11 @@ def test_pending_order():
     from trader import Trader
     Trader(cfg()).execute(Signal("XAUUSD", "SELL", "LIMIT", 2360.0, 2370.0, [2340.0]))
     assert m.sent[0]["action"] == 5 and m.sent[0]["type"] == 3 and m.sent[0]["price"] == 2360.0
+
+
+def test_uses_its_own_portable_terminal():
+    m = fake_mt5()
+    from trader import Trader
+    Trader(cfg()).connect()
+    args, kwargs = m.init_calls[0]
+    assert args == (r"C:\MT5-Copier\terminal64.exe",) and kwargs["portable"] is True
