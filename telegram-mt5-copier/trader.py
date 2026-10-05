@@ -43,16 +43,29 @@ class Trader:
 
     def connect(self) -> None:
         mt5, cfg = self.mt5, self.cfg
-        kwargs = {"login": cfg.mt5_login, "password": cfg.mt5_password, "server": cfg.mt5_server}
+        kwargs = {}
+        if cfg.mt5_password:
+            kwargs = {"login": cfg.mt5_login, "password": cfg.mt5_password, "server": cfg.mt5_server}
         # Always start our own terminal (MT5_PATH, portable) so an MT5 you already have running
         # keeps its own account and is never switched over.
         ok = mt5.initialize(cfg.mt5_path, portable=True, **kwargs)
         if not ok:
-            raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
+            code, msg = mt5.last_error()
+            hint = ""
+            if code == -6:
+                hint = (" The demo server rejected the login. Use the main 'Password' (not the 'Investor' one),"
+                        " check MT5_LOGIN and MT5_SERVER, or leave MT5_PASSWORD empty and log in by hand"
+                        " in the MT5_PATH window with 'Save password' ticked.")
+            raise RuntimeError(f"MT5 initialize failed: ({code}, {msg!r}).{hint}")
 
         info = mt5.account_info()
         if info is None:
-            raise RuntimeError(f"Could not read MT5 account info: {mt5.last_error()}")
+            raise RuntimeError(f"No account is logged in to the MT5_PATH terminal ({mt5.last_error()}). "
+                               "Log in there by hand with 'Save password' ticked, or fill MT5_PASSWORD.")
+        if cfg.mt5_login and info.login != cfg.mt5_login:
+            mt5.shutdown()
+            raise RuntimeError(f"The MT5_PATH terminal is logged in to {info.login}, not MT5_LOGIN {cfg.mt5_login}. "
+                               "Log in to the right account in that window, or fix MT5_LOGIN.")
         if info.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
             mt5.shutdown()
             raise RuntimeError(

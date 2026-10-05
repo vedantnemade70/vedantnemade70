@@ -120,3 +120,22 @@ def test_sl_categories():
     assert [sl_category(s) for s in ["EURUSD", "USDJPY", "XAUUSD", "XAGUSD", "USOIL", "UKOIL",
                                      "BTCUSD", "ETHUSD", "US30", "NAS100"]] == \
         ["forex", "forex", "metal", "metal", "oil", "oil", "crypto", "crypto", "index", "index"]
+
+
+def test_attaches_to_logged_in_account_without_password():
+    m = fake_mt5()
+    from trader import Trader
+    Trader(cfg(mt5_password="", mt5_login=0)).connect()
+    args, kwargs = m.init_calls[0]
+    assert "password" not in kwargs and kwargs["portable"] is True
+
+
+def test_wrong_logged_in_account_is_refused():
+    fake_mt5()
+    from trader import Trader
+    try:
+        Trader(cfg(mt5_password="", mt5_login=999)).connect()
+    except RuntimeError as e:
+        assert "not MT5_LOGIN 999" in str(e)
+    else:
+        raise AssertionError("should refuse")

@@ -80,9 +80,11 @@ def load_config(need_mt5: bool = True) -> Config:
         tg_phone=_get("TG_PHONE"),
         tg_channels=[_channel(c) for c in _env("TG_CHANNELS").split(",") if c.strip()],
         tg_session=str(HERE / (_env("TG_SESSION") or "copier")),
-        mt5_login=_num("MT5_LOGIN", kind=int) if need_mt5 else 0,
-        mt5_password=_get("MT5_PASSWORD") if need_mt5 else "",
-        mt5_server=_get("MT5_SERVER") if need_mt5 else "",
+        # Login/password/server are optional: left empty, the bot uses the account that is
+        # already logged in (password saved) in the MT5_PATH terminal.
+        mt5_login=_num("MT5_LOGIN", "0", int) if need_mt5 else 0,
+        mt5_password=(os.getenv("MT5_PASSWORD") or "").strip() if need_mt5 else "",
+        mt5_server=_env("MT5_SERVER") if need_mt5 else "",
         mt5_path=_get("MT5_PATH") if need_mt5 else "",
         lot_size=_num("LOT_SIZE", "0.01"),
         risk_percent=_num("RISK_PERCENT", "0"),

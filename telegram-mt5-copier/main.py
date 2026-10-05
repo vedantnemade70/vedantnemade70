@@ -91,8 +91,6 @@ async def check(cfg) -> None:
         trader.connect()
     except Exception as e:
         print(f"[FAIL] MT5: {e}")
-        print("       Check MT5_LOGIN / MT5_PASSWORD / MT5_SERVER match the new demo account exactly,")
-        print("       and that you can log in to it by hand in the C:\\MT5-Copier window.")
         return
     mt5 = trader.mt5
     acc, term = mt5.account_info(), mt5.terminal_info()
