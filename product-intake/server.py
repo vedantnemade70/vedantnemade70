@@ -172,10 +172,12 @@ def make_handler(cfg):
                 return self._send(200, (WEB_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
             if method == "GET" and path == "/api/status":
                 return self._json(200, {
-                    "model": cfg["claude"]["model"],
-                    "effort": cfg["claude"]["effort"],
+                    "model": cfg["llm"]["model"],
+                    "fallback_models": cfg["llm"].get("fallback_models") or [],
                     "mcp_command": " ".join(intake.mcp_command(cfg)),
-                    "api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+                    "api_key_env": cfg["llm"].get("api_key_env"),
+                    "api_key_set": not cfg["llm"].get("api_key_env")
+                                   or bool(os.environ.get(cfg["llm"]["api_key_env"])),
                 })
             if path in ("/api/products", "/products"):
                 if method == "GET":

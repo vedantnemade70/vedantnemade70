@@ -255,9 +255,9 @@ async function loadStatus() {
     const s = await api("GET", "/api/status");
     $("#status").innerHTML =
       `<span class="pill" title="${esc(s.mcp_command)}">MCP: ${esc(s.mcp_command.split(" ").slice(-1)[0].split("/").pop())}</span>` +
-      `<span class="pill">Model: ${esc(s.model)}</span>` +
+      `<span class="pill" title="Fallbacks: ${esc(s.fallback_models.join(", ") || "none")}">Model: ${esc(s.model)}</span>` +
       (s.api_key_set ? `<span class="pill ok">API key set</span>`
-                     : `<span class="pill bad" title="Set ANTHROPIC_API_KEY before starting the server">No API key</span>`);
+                     : `<span class="pill bad" title="Set ${esc(s.api_key_env)} before starting the server">No API key</span>`);
   } catch (e) { $("#status").innerHTML = `<span class="pill bad">Server not reachable</span>`; }
 }
 
@@ -320,7 +320,7 @@ function renderDetail() {
     const calls = result.tool_calls || [];
     body = `${result.status !== "ok" ? `<p><span class="badge ${esc(result.status)}">${STATUS_LABEL[result.status] || esc(result.status)}</span></p>` : ""}
       <div class="md">${markdown(text) || '<p class="note">(empty response)</p>'}</div>
-      <details class="tools"><summary>${calls.length} Mastercard MCP tool call${calls.length === 1 ? "" : "s"}</summary>
+      <details class="tools"><summary>${calls.length} Mastercard MCP tool call${calls.length === 1 ? "" : "s"}${result.model ? ` · answered by ${esc(result.model)}` : ""}</summary>
         <ol>${calls.map(c => `<li><code>${esc(c.tool)}</code> <code>${esc(JSON.stringify(c.input))}</code>${c.is_error ? ' <span class="badge failed">error</span>' : ""}</li>`).join("")}</ol>
       </details>`;
   }

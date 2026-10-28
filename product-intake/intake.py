@@ -5,14 +5,15 @@ number of documents: Markdown/text docs, OpenAPI/Swagger specs (.yaml/.json), PD
 
 For every product, the app starts the Mastercard Developers MCP server as a child
 process (JSON-RPC over stdin/stdout, see mcp_stdio.py), then runs each predefined
-prompt from prompts/ through Claude. Claude reads the product documents and calls
-the Mastercard MCP tools to answer. Responses are written to outbox/<product>/.
+prompt from prompts/ through a model on OpenRouter (see llm.py). The model reads the
+product documents and calls the Mastercard MCP tools to answer. Responses are written to outbox/<product>/.
 
 Usage:
     python intake.py run <product-folder>   process one product now
     python intake.py watch                  process every new folder dropped in inbox/
     python intake.py serve                  watch + web front end at http://localhost:8080
     python intake.py tools                  list the MCP server's tools (connection check)
+    python intake.py models                 list OpenRouter's free models that support tools
 """
 
 import argparse
@@ -28,6 +29,7 @@ from pathlib import Path
 
 import yaml
 
+from llm import ChatClient, LLMError, list_free_tool_models
 from mcp_stdio import StdioMCPClient
 
 APP_DIR = Path(__file__).resolve().parent
@@ -100,30 +102,28 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-") or "product"
 
 
-# -- Claude + MCP --------------------------------------------------------------
+# -- LLM + MCP -----------------------------------------------------------------
 
 def product_content(product):
-    """User-message blocks holding the product documents (identical for every prompt, so cached)."""
-    blocks = []
-    for name, data in product["pdfs"]:
-        blocks.append({
-            "type": "document",
-            "title": name,
-            "source": {"type": "base64", "media_type": "application/pdf", "data": data},
-        })
+    """User-message parts holding the product documents (identical for every prompt)."""
+    parts = []
     docs = "\n\n".join(
         f'<document path="{name}">\n{text}\n</document>' for name, text in product["texts"]
     )
-    blocks.append({
+    parts.append({
         "type": "text",
         "text": (
             f"Company: {product['company']}\nProduct: {product['name']}\n"
             f"Description: {product['description']}\n\n"
             f"<product_documents>\n{docs or '(no text documents)'}\n</product_documents>"
         ),
-        "cache_control": {"type": "ephemeral"},
     })
-    return blocks
+    for name, data in product["pdfs"]:
+        parts.append({
+            "type": "file",
+            "file": {"filename": name, "file_data": f"data:application/pdf;base64,{data}"},
+        })
+    return parts
 
 
 def render_prompt(template, product):
@@ -134,60 +134,62 @@ def render_prompt(template, product):
     )
 
 
-def run_prompt(client, mcp, tools, product, prompt_def, cfg):
-    """Run one predefined prompt, letting Claude call the MCP tools. Returns (text, trace, status)."""
-    claude_cfg = cfg["claude"]
-    messages = [{
-        "role": "user",
-        "content": product_content(product) + [
+def mcp_tools_for_llm(mcp_tools):
+    return [{
+        "type": "function",
+        "function": {
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "parameters": t.get("inputSchema") or {"type": "object", "properties": {}},
+        },
+    } for t in mcp_tools]
+
+
+def run_prompt(llm, mcp, tools, product, prompt_def, cfg):
+    """Run one predefined prompt, letting the model call the MCP tools.
+
+    Returns (text, trace, status, model_used)."""
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": product_content(product) + [
             {"type": "text", "text": render_prompt(prompt_def["prompt"], product)}
-        ],
-    }]
-    trace = []
+        ]},
+    ]
+    trace, model_used, text = [], llm.model, ""
 
-    for _ in range(claude_cfg["max_tool_rounds"] + 1):
-        response = client.beta.messages.create(
-            model=claude_cfg["model"],
-            max_tokens=claude_cfg["max_tokens"],
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            thinking={"type": "adaptive"},
-            output_config={"effort": claude_cfg["effort"]},
-            system=SYSTEM_PROMPT,
-            tools=tools,
-            messages=messages,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        text = "\n".join(b.text for b in response.content if b.type == "text").strip()
+    for _ in range(cfg["llm"]["max_tool_rounds"] + 1):
+        message, finish_reason, model_used = llm.chat(messages, tools)
+        text = (message.get("content") or "").strip()
+        tool_calls = message.get("tool_calls") or []
 
-        if response.stop_reason == "refusal":
-            return text or "_The model declined this prompt._", trace, "refused"
-        if response.stop_reason == "max_tokens":
-            return text, trace, "truncated"
-        if response.stop_reason == "pause_turn":
-            continue
-        if response.stop_reason != "tool_use":
-            return text, trace, "ok"
+        if not tool_calls:
+            if finish_reason == "length":
+                return text, trace, "truncated", model_used
+            if finish_reason == "content_filter":
+                return text or "_The model declined this prompt._", trace, "refused", model_used
+            return text, trace, "ok", model_used
 
-        results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            print(f"    -> {block.name} {json.dumps(block.input)[:150]}")
+        messages.append({"role": "assistant", "content": message.get("content"), "tool_calls": tool_calls})
+        for call in tool_calls:
+            name = call["function"]["name"]
             try:
-                output, is_error = mcp.call_tool(block.name, block.input)
-            except Exception as exc:
-                output, is_error = f"Tool call failed: {exc}", True
-            trace.append({"tool": block.name, "input": block.input, "is_error": is_error})
-            results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": output or "(empty result)",
-                "is_error": is_error,
+                args = json.loads(call["function"].get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args, output, is_error = {}, "Invalid JSON in tool arguments; call the tool again.", True
+            else:
+                print(f"    -> {name} {json.dumps(args)[:150]}")
+                try:
+                    output, is_error = mcp.call_tool(name, args)
+                except Exception as exc:
+                    output, is_error = f"Tool call failed: {exc}", True
+            trace.append({"tool": name, "input": args, "is_error": is_error})
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call["id"],
+                "content": (f"ERROR: {output}" if is_error else output) or "(empty result)",
             })
-        messages.append({"role": "user", "content": results})
 
-    return text, trace, "tool_limit_reached"
+    return text, trace, "tool_limit_reached", model_used
 
 
 def mcp_command(cfg):
@@ -206,8 +208,6 @@ def save_summary(out_dir, summary):
 
 
 def process_product(folder, cfg, prompts=None):
-    import anthropic
-
     product = load_product(folder)
     prompts = prompts or load_prompts(cfg["paths"]["prompts"])
     out_dir = cfg["paths"]["outbox"] / product_id(product["company"], product["name"])
@@ -231,22 +231,18 @@ def process_product(folder, cfg, prompts=None):
     save_summary(out_dir, summary)
 
     try:
-        client = anthropic.Anthropic()
+        llm = ChatClient(cfg["llm"])
         with StdioMCPClient(mcp_command(cfg), timeout=cfg["mcp_server"]["timeout_seconds"]) as mcp:
-            tools = [
-                {"name": t["name"], "description": t.get("description", ""),
-                 "input_schema": t.get("inputSchema") or {"type": "object", "properties": {}}}
-                for t in mcp.list_tools()
-            ]
+            tools = mcp_tools_for_llm(mcp.list_tools())
             summary["mcp_server"] = mcp.server_info
             print(f"[mcp] connected to {mcp.server_info.get('name', 'server')} with {len(tools)} tools")
 
             for prompt_def in prompts:
                 print(f"  [prompt] {prompt_def['name']}")
                 try:
-                    text, trace, status = run_prompt(client, mcp, tools, product, prompt_def, cfg)
-                except anthropic.APIError as exc:
-                    text, trace, status = f"Claude API error: {exc}", [], "error"
+                    text, trace, status, model_used = run_prompt(llm, mcp, tools, product, prompt_def, cfg)
+                except LLMError as exc:
+                    text, trace, status, model_used = f"Model API error: {exc}", [], "error", None
                 out_file = out_dir / f"{slug(prompt_def['name'])}.md"
                 out_file.write_text(
                     f"# {prompt_def['name']}\n\n"
@@ -254,7 +250,7 @@ def process_product(folder, cfg, prompts=None):
                 )
                 summary["results"].append({
                     "prompt": prompt_def["name"], "status": status,
-                    "output": out_file.name, "tool_calls": trace,
+                    "output": out_file.name, "tool_calls": trace, "model": model_used,
                 })
                 save_summary(out_dir, summary)
         summary["status"] = "done"
@@ -316,6 +312,7 @@ def main():
     sub.add_parser("watch", help="process new product folders dropped into the inbox")
     sub.add_parser("serve", help="watch the inbox and accept products over HTTP")
     sub.add_parser("tools", help="list the MCP server's tools")
+    sub.add_parser("models", help="list OpenRouter's free models that support tools")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -328,6 +325,9 @@ def main():
         serve(cfg)
     elif args.command == "tools":
         list_tools(cfg)
+    elif args.command == "models":
+        for m in list_free_tool_models(cfg["llm"]["base_url"]):
+            print(f"{m['id']:60} context {m.get('context_length', '?')}")
 
 
 if __name__ == "__main__":

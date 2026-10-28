@@ -11,7 +11,7 @@ new product ──► inbox/ (or POST /products)
            intake.py ──stdin/stdout JSON-RPC──► Mastercard MCP server (child process)
                    │                                 get-services-list, get-api-operation-list,
                    ▼                                 get-documentation, OAuth guides, ...
-        Claude + your prompts/*.yaml
+   free model on OpenRouter + your prompts/*.yaml
                    │
                    ▼
        outbox/<company>__<product>/*.md + summary.json
@@ -23,9 +23,31 @@ directly: newline-delimited JSON-RPC 2.0 (`initialize` → `notifications/initia
 
 ## Setup
 1. Python 3.10+ and Node.js 18+ (the Mastercard server runs with `npx`).
-2. `pip install -r requirements.txt`
-3. `export ANTHROPIC_API_KEY=...`
-4. Check the connection: `python intake.py tools` (lists the Mastercard tools).
+2. `pip install -r requirements.txt` (only PyYAML; everything else is the standard library)
+3. Put your OpenRouter key in an environment variable:
+   - macOS / Linux: `export OPENROUTER_API_KEY=sk-or-...`
+   - Windows (PowerShell): `$env:OPENROUTER_API_KEY="sk-or-..."`
+4. Check the connections:
+   - `python intake.py tools` lists the Mastercard MCP tools.
+   - `python intake.py models` lists OpenRouter's free models that support tool calling.
+
+## Model (OpenRouter, free)
+The prompts are answered by a free OpenRouter model that supports tool calling, so it can
+call the Mastercard tools. Defaults in `config.yaml`:
+
+```yaml
+llm:
+  model: openai/gpt-oss-120b:free
+  fallback_models:            # used when the main model is down or rate limited
+    - qwen/qwen3-next-80b-a3b-instruct:free
+    - google/gemma-4-31b-it:free
+```
+OpenRouter's free lineup changes often. If a model stops working, run `python intake.py models`
+and put one of the listed IDs in `config.yaml`. Free models are rate limited (OpenRouter allows a
+limited number of free requests per day; buying a small amount of credit raises it), and each
+product uses several requests per prompt, so the app waits and retries when it hits a limit.
+To use a paid model instead (better answers), set `model` to any model ID from openrouter.ai/models.
+To run fully offline, point `base_url` at Ollama (`http://localhost:11434/v1`, `api_key_env: ""`).
 
 ## A product
 A folder with a `product.yaml` plus any documents:
@@ -49,7 +71,7 @@ Then open **http://localhost:8080**. From the page you can:
   each prompt's response (tables and lists rendered) plus the Mastercard MCP tool calls it made.
 - **Prompts**: add, edit and delete your predefined prompts.
 
-The header shows the MCP server, the model, and whether `ANTHROPIC_API_KEY` is set.
+The header shows the MCP server, the model, and whether `OPENROUTER_API_KEY` is set.
 The server listens on 127.0.0.1 only; change `server.host` in `config.yaml` to expose it,
 but note the page has no login.
 
@@ -88,9 +110,9 @@ Included: `product_overview`, `api_mapping`, `integration_plan`, `compliance_che
 - `mcp_server.command`: how to launch the server. Default `npx -y @mastercard/developers-mcp`;
   any stdio MCP server works (for example `["node", "/path/to/dist/index.js"]`).
 - `mcp_server.extra_args`: focus the server, e.g. `--service=<docs URL>` or `--api-specification=<spec URL>`.
-- `claude`: model, effort, token and tool-call limits.
+- `llm`: endpoint, API key variable, model and fallbacks, token and tool-call limits, retries.
 - `paths`, `watch.poll_seconds`, `server.host/port`.
 
 ## Tests
 `python -m unittest discover tests` runs offline against a fake stdio MCP server
-and a stubbed Claude client, and checks the web API.
+a stubbed model and a fake OpenRouter server, and checks the web API.
