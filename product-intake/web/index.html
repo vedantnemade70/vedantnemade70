@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Intake</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #eb5a1e; --accent-soft: #fdeee6; --ok: #12805c; --ok-soft: #e3f4ec;
+    --warn: #b25e09; --warn-soft: #fdf1df; --bad: #c4321c; --bad-soft: #fbe7e4;
+    --info: #2f5fd0; --info-soft: #e7eefc; --code: #f1f3f6; --shadow: 0 1px 2px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1a1e26; --text: #e6e8ec; --muted: #9aa3b2; --line: #2b313c;
+      --accent: #ff7a3d; --accent-soft: #3a2418; --ok: #4cc79a; --ok-soft: #173327;
+      --warn: #f0a650; --warn-soft: #3a2a14; --bad: #f2735e; --bad-soft: #3d1d18;
+      --info: #7ea2ff; --info-soft: #1b2643; --code: #232833; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input, textarea { font: inherit; color: inherit; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 24px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; }
+  .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff;
+          display: grid; place-items: center; font-size: 15px; }
+  nav { display: flex; gap: 4px; }
+  nav button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+  nav button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .status { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  .pill { padding: 3px 10px; border-radius: 999px; background: var(--code); color: var(--muted); white-space: nowrap;
+          max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 20px; align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+  .list-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .list-head h2, .panel-title { margin: 0; font-size: 15px; font-weight: 650; }
+  .btn { border: 1px solid var(--line); background: var(--panel); padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .products { list-style: none; margin: 0; padding: 6px; max-height: calc(100vh - 190px); overflow: auto; }
+  .products li { padding: 10px 12px; border-radius: 8px; cursor: pointer; display: grid; gap: 2px; }
+  .products li:hover { background: var(--code); }
+  .products li.active { background: var(--accent-soft); }
+  .products .row { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .products .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .products .company { color: var(--muted); font-size: 13px; }
+  .badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600; }
+  .badge.done, .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.processing, .badge.queued { background: var(--info-soft); color: var(--info); }
+  .badge.failed, .badge.error, .badge.refused { background: var(--bad-soft); color: var(--bad); }
+  .badge.truncated, .badge.tool_limit_reached { background: var(--warn-soft); color: var(--warn); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+  .products li.empty { display: block; cursor: default; }
+  .panel { padding: 20px 24px; }
+  .detail-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .detail-head h1 { margin: 0; font-size: 22px; }
+  .detail-head .sub { color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--code); color: var(--muted); font-family: ui-monospace, monospace; }
+  .progress { height: 6px; background: var(--code); border-radius: 999px; overflow: hidden; margin-top: 14px; }
+  .progress > div { height: 100%; background: var(--accent); transition: width .3s; }
+  .error-box { margin-top: 14px; padding: 10px 14px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-top: 18px; overflow-x: auto; }
+  .tabs button { border: 0; background: none; padding: 9px 14px; cursor: pointer; color: var(--muted);
+                 border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabs .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .tabs .dot.ok { background: var(--ok); } .tabs .dot.bad { background: var(--bad); } .tabs .dot.warn { background: var(--warn); }
+  .tabs .dot.run { background: var(--info); animation: pulse 1s infinite alternate; }
+  @keyframes pulse { to { opacity: .3; } }
+  .md { padding-top: 6px; overflow-wrap: anywhere; }
+  .md h1 { font-size: 20px; } .md h2 { font-size: 18px; } .md h3 { font-size: 16px; }
+  .md table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; margin: 12px 0; font-size: 14px; }
+  .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .md th { background: var(--code); }
+  .md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .md pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  .md pre code { padding: 0; background: none; }
+  .md blockquote { margin: 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+  .md a { color: var(--accent); }
+  details.tools { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font-size: 14px; }
+  details.tools summary { cursor: pointer; }
+  details.tools ol { padding-left: 20px; }
+  details.tools code { font-size: 12px; }
+  form.grid { display: grid; gap: 14px; max-width: 720px; }
+  label { display: grid; gap: 5px; font-weight: 600; font-size: 14px; }
+  label .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+  input[type=text], textarea { font-weight: 400; width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  textarea.prompt { min-height: 150px; font-family: ui-monospace, monospace; font-size: 13px; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .files { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+  .files li { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--code); border-radius: 6px; font-size: 14px; }
+  .files button { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 16px; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .note { color: var(--muted); font-size: 13px; }
+  .prompts-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .prompts-head p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .prompt-card { padding: 18px 20px; margin-bottom: 14px; }
+  .prompt-card .meta { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin-bottom: 12px; }
+  .prompt-card .file { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
+           padding: 9px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+  .toast.show { opacity: 1; }
+  .hidden { display: none !important; }
+  @media (max-width: 860px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .products { max-height: 260px; }
+    .status { margin-left: 0; }
+    .prompt-card .meta { grid-template-columns: 1fr; }
+    .panel { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="logo">⇄</div>Product Intake</div>
+  <nav>
+    <button data-view="products" class="active">Products</button>
+    <button data-view="prompts">Prompts</button>
+  </nav>
+  <div class="status" id="status"></div>
+</header>
+
+<main>
+  <!-- Products view -->
+  <section id="view-products" class="layout">
+    <div class="card">
+      <div class="list-head">
+        <h2>Products</h2>
+        <button class="btn primary" id="new-btn">+ New product</button>
+      </div>
+      <ul class="products" id="product-list"></ul>
+    </div>
+
+    <div class="card panel" id="detail"></div>
+  </section>
+
+  <!-- Prompts view -->
+  <section id="view-prompts" class="hidden">
+    <div class="prompts-head">
+      <div>
+        <h2 class="panel-title">Predefined prompts</h2>
+        <p>Every prompt runs for each new product, in order. Use <code>$company</code>, <code>$product_name</code> and
+           <code>$product_description</code> as placeholders. The product's documents are attached automatically.</p>
+      </div>
+      <button class="btn primary" id="add-prompt">+ Add prompt</button>
+    </div>
+    <div id="prompt-list"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const state = { products: [], selected: null, detail: null, tab: 0, files: [], pollTimer: null };
+
+// ---------- helpers ----------
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method, headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+const STATUS_LABEL = { done: "Done", processing: "Processing", queued: "Queued", failed: "Failed",
+  ok: "OK", error: "Error", refused: "Declined", truncated: "Cut off", tool_limit_reached: "Tool limit" };
+
+// Small Markdown renderer. Input is HTML-escaped first, so model output can't inject markup.
+function inline(s) {
+  return s
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
+    .replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function markdown(src) {
+  const lines = esc(src).replace(/\r/g, "").split("\n");
+  const out = []; let i = 0;
+  const isTableSep = l => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
+  const cells = l => l.trim().replace(/^\||\|$/g, "").split("|").map(c => inline(c.trim()));
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) {
+      const buf = []; i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++; out.push(`<pre><code>${buf.join("\n")}</code></pre>`); continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { out.push("<hr>"); i++; continue; }
+    if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      let html = "<table><thead><tr>" + cells(line).map(c => `<th>${c}</th>`).join("") + "</tr></thead><tbody>";
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        html += "<tr>" + cells(lines[i]).map(c => `<td>${c}</td>`).join("") + "</tr>"; i++;
+      }
+      out.push(html + "</tbody></table>"); continue;
+    }
+    if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+      const ordered = /^\s*\d/.test(line); const items = [];
+      while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+        let item = lines[i].replace(/^\s*([-*+]|\d+[.)])\s+/, ""); i++;
+        while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) item += " " + lines[i++].trim();
+        items.push(`<li>${inline(item)}</li>`);
+      }
+      out.push(ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`); continue;
+    }
+    if (/^&gt;\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^&gt;\s?/.test(lines[i])) buf.push(lines[i++].replace(/^&gt;\s?/, ""));
+      out.push(`<blockquote>${inline(buf.join(" "))}</blockquote>`); continue;
+    }
+    if (!line.trim()) { i++; continue; }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*([-*+]|\d+[.)])\s+|&gt;)/.test(lines[i])
+           && !(lines[i].includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1]))) buf.push(lines[i++]);
+    out.push(`<p>${inline(buf.join("<br>"))}</p>`);
+  }
+  return out.join("\n");
+}
+
+// ---------- status bar ----------
+async function loadStatus() {
+  try {
+    const s = await api("GET", "/api/status");
+    $("#status").innerHTML =
+      `<span class="pill" title="${esc(s.mcp_command)}">MCP: ${esc(s.mcp_command.split(" ").slice(-1)[0].split("/").pop())}</span>` +
+      `<span class="pill">Model: ${esc(s.model)}</span>` +
+      (s.api_key_set ? `<span class="pill ok">API key set</span>`
+                     : `<span class="pill bad" title="Set ANTHROPIC_API_KEY before starting the server">No API key</span>`);
+  } catch (e) { $("#status").innerHTML = `<span class="pill bad">Server not reachable</span>`; }
+}
+
+// ---------- products ----------
+async function loadProducts() {
+  try { state.products = await api("GET", "/api/products"); } catch (e) { return; }
+  renderList();
+  if (state.selected) {
+    try { state.detail = await api("GET", `/api/products/${state.selected}`); renderDetail(); } catch (e) {}
+  }
+  const busy = state.products.some(p => p.status === "queued" || p.status === "processing");
+  clearTimeout(state.pollTimer);
+  state.pollTimer = setTimeout(loadProducts, busy ? 3000 : 15000);
+}
+
+function renderList() {
+  const list = $("#product-list");
+  if (!state.products.length) {
+    list.innerHTML = `<li class="empty">No products yet.<br>Click <b>+ New product</b> to add one.</li>`;
+    return;
+  }
+  list.innerHTML = state.products.map(p => `
+    <li data-id="${esc(p.id)}" class="${p.id === state.selected ? "active" : ""}">
+      <div class="row"><span class="name">${esc(p.product)}</span>
+        <span class="badge ${esc(p.status)}">${STATUS_LABEL[p.status] || esc(p.status)}${p.status === "processing" ? ` ${p.done}/${p.total}` : ""}</span></div>
+      <div class="row"><span class="company">${esc(p.company)}</span><span class="company">${when(p.updated)}</span></div>
+    </li>`).join("");
+}
+
+$("#product-list").addEventListener("click", async e => {
+  const li = e.target.closest("li[data-id]"); if (!li) return;
+  state.selected = li.dataset.id; state.tab = 0; renderList();
+  $("#detail").innerHTML = `<div class="empty">Loading…</div>`;
+  try { state.detail = await api("GET", `/api/products/${state.selected}`); renderDetail(); }
+  catch (err) { $("#detail").innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+});
+
+function renderDetail() {
+  const d = state.detail; if (!d) return;
+  const status = d.status || "done";
+  const total = (d.prompts || []).length || d.total || 0;
+  const done = (d.results || []).length;
+  const prompts = d.prompts || (d.results || []).map(r => r.prompt);
+  if (state.tab >= Math.max(prompts.length, 1)) state.tab = 0;
+
+  const tabs = prompts.map((name, i) => {
+    const r = (d.results || [])[i];
+    let dot = "";
+    if (r) dot = r.status === "ok" ? "ok" : (r.status === "error" || r.status === "refused") ? "bad" : "warn";
+    else if (status === "processing" && i === done) dot = "run";
+    return `<button data-tab="${i}" class="${i === state.tab ? "active" : ""}"><span class="dot ${dot}"></span>${esc(name)}</button>`;
+  }).join("");
+
+  const result = (d.results || [])[state.tab];
+  let body;
+  if (status === "queued") body = `<div class="empty">Waiting in the inbox. Processing starts within a few seconds.</div>`;
+  else if (!result) body = `<div class="empty">${status === "processing" ? "Working on this prompt…" : "No response for this prompt."}</div>`;
+  else {
+    const text = result.response.replace(/^# .*\n+_.*_\n+/, "");  // drop the file's own title lines
+    const calls = result.tool_calls || [];
+    body = `${result.status !== "ok" ? `<p><span class="badge ${esc(result.status)}">${STATUS_LABEL[result.status] || esc(result.status)}</span></p>` : ""}
+      <div class="md">${markdown(text) || '<p class="note">(empty response)</p>'}</div>
+      <details class="tools"><summary>${calls.length} Mastercard MCP tool call${calls.length === 1 ? "" : "s"}</summary>
+        <ol>${calls.map(c => `<li><code>${esc(c.tool)}</code> <code>${esc(JSON.stringify(c.input))}</code>${c.is_error ? ' <span class="badge failed">error</span>' : ""}</li>`).join("")}</ol>
+      </details>`;
+  }
+
+  $("#detail").innerHTML = `
+    <div class="detail-head">
+      <div><h1>${esc(d.product)}</h1><div class="sub">${esc(d.company)}${d.description ? " · " + esc(d.description) : ""}</div></div>
+      <span class="badge ${esc(status)}">${STATUS_LABEL[status] || esc(status)}</span>
+    </div>
+    ${(d.documents || []).length ? `<div class="chips">${d.documents.map(n => `<span class="chip">${esc(n)}</span>`).join("")}</div>` : ""}
+    ${status === "processing" && total ? `<div class="progress"><div style="width:${Math.round(done / total * 100)}%"></div></div>` : ""}
+    ${d.error ? `<div class="error-box">${esc(d.error)}</div>` : ""}
+    ${prompts.length ? `<div class="tabs">${tabs}</div>` : ""}
+    ${body}`;
+}
+
+$("#detail").addEventListener("click", e => {
+  const b = e.target.closest("button[data-tab]"); if (!b) return;
+  state.tab = Number(b.dataset.tab); renderDetail();
+});
+
+// ---------- new product form ----------
+function showForm() {
+  state.selected = null; state.files = []; renderList();
+  $("#detail").innerHTML = `
+    <h2 class="panel-title" style="margin-bottom:16px">New product</h2>
+    <form class="grid" id="product-form">
+      <label>Company <input type="text" name="company" required placeholder="Acme Fintech"></label>
+      <label>Product name <input type="text" name="name" required placeholder="PayLink"></label>
+      <label>Description <span class="hint">One or two sentences about what the product does.</span>
+        <textarea name="description" rows="3"></textarea></label>
+      <label>Documents and API specs <span class="hint">Markdown, text, OpenAPI/Swagger (.yaml / .json), PDF…</span></label>
+      <div class="drop" id="drop">Drop files here or <u>browse</u><input type="file" id="file-input" multiple hidden></div>
+      <ul class="files" id="file-list"></ul>
+      <div class="actions">
+        <button class="btn primary" type="submit" id="submit-btn">Send to Mastercard MCP</button>
+        <span class="note">All predefined prompts will run for this product.</span>
+      </div>
+    </form>`;
+  const drop = $("#drop"), input = $("#file-input");
+  drop.addEventListener("click", () => input.click());
+  input.addEventListener("change", () => { addFiles(input.files); input.value = ""; });
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); });
+  $("#file-list").addEventListener("click", e => {
+    const b = e.target.closest("button[data-i]"); if (!b) return;
+    state.files.splice(Number(b.dataset.i), 1); renderFiles();
+  });
+  $("#product-form").addEventListener("submit", submitProduct);
+}
+function addFiles(list) {
+  for (const f of list) if (!state.files.some(x => x.name === f.name)) state.files.push(f);
+  renderFiles();
+}
+function renderFiles() {
+  $("#file-list").innerHTML = state.files.map((f, i) =>
+    `<li><span>${esc(f.name)} <span class="note">${(f.size / 1024).toFixed(1)} KB</span></span><button type="button" data-i="${i}" title="Remove">×</button></li>`).join("");
+}
+function readBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+async function submitProduct(e) {
+  e.preventDefault();
+  const form = e.target, btn = $("#submit-btn");
+  btn.disabled = true; btn.textContent = "Sending…";
+  try {
+    const files = await Promise.all(state.files.map(async f => ({ name: f.name, content_base64: await readBase64(f) })));
+    const res = await api("POST", "/api/products", {
+      company: form.company.value, name: form.name.value, description: form.description.value, files,
+    });
+    toast("Product queued");
+    state.selected = res.id; state.tab = 0; state.detail = null;
+    $("#detail").innerHTML = `<div class="empty">Queued…</div>`;
+    loadProducts();
+  } catch (err) {
+    toast(err.message); btn.disabled = false; btn.textContent = "Send to Mastercard MCP";
+  }
+}
+$("#new-btn").addEventListener("click", showForm);
+
+// ---------- prompts ----------
+async function loadPrompts() {
+  try {
+    const prompts = await api("GET", "/api/prompts");
+    $("#prompt-list").innerHTML = prompts.map(promptCard).join("") ||
+      `<div class="card empty">No prompts yet. Add one to start.</div>`;
+  } catch (e) { $("#prompt-list").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; }
+}
+function promptCard(p) {
+  return `<form class="card prompt-card" data-file="${esc(p.file || "")}">
+    <div class="meta">
+      <label>Name <input type="text" name="name" value="${esc(p.name)}" required></label>
+      <label>Description <input type="text" name="description" value="${esc(p.description)}"></label>
+    </div>
+    <label>Prompt <textarea class="prompt" name="prompt" required>${esc(p.prompt)}</textarea></label>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn primary" type="submit">Save</button>
+      ${p.file ? `<button class="btn danger" type="button" data-delete>Delete</button>` : `<button class="btn" type="button" data-cancel>Cancel</button>`}
+      <span class="file">${esc(p.file || "new prompt")}</span>
+    </div>
+  </form>`;
+}
+$("#prompt-list").addEventListener("submit", async e => {
+  e.preventDefault();
+  const form = e.target, file = form.dataset.file;
+  const body = { name: form.name.value, description: form.description.value, prompt: form.prompt.value };
+  try {
+    await (file ? api("PUT", `/api/prompts/${encodeURIComponent(file)}`, body) : api("POST", "/api/prompts", body));
+    toast("Prompt saved"); loadPrompts();
+  } catch (err) { toast(err.message); }
+});
+$("#prompt-list").addEventListener("click", async e => {
+  const form = e.target.closest("form");
+  if (e.target.closest("[data-cancel]")) { form.remove(); return; }
+  if (!e.target.closest("[data-delete]")) return;
+  if (!confirm(`Delete the prompt "${form.name.value}"?`)) return;
+  try { await api("DELETE", `/api/prompts/${encodeURIComponent(form.dataset.file)}`); toast("Prompt deleted"); loadPrompts(); }
+  catch (err) { toast(err.message); }
+});
+$("#add-prompt").addEventListener("click", () => {
+  if ($("#prompt-list form[data-file='']")) return;
+  $(".card.empty", $("#prompt-list"))?.remove();
+  $("#prompt-list").insertAdjacentHTML("beforeend", promptCard({ name: "", description: "", prompt: "" }));
+  const form = $("#prompt-list form[data-file='']");
+  form.scrollIntoView({ behavior: "smooth" }); form.name.focus();
+});
+
+// ---------- navigation ----------
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("active", x === b));
+  $("#view-products").classList.toggle("hidden", b.dataset.view !== "products");
+  $("#view-prompts").classList.toggle("hidden", b.dataset.view !== "prompts");
+  if (b.dataset.view === "prompts") loadPrompts();
+}));
+
+loadStatus();
+loadProducts().then(() => {
+  if (state.products.length) { state.selected = state.products[0].id; loadProducts(); }
+  else showForm();
+});
+</script>
+</body>
+</html>

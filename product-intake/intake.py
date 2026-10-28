@@ -11,7 +11,7 @@ the Mastercard MCP tools to answer. Responses are written to outbox/<product>/.
 Usage:
     python intake.py run <product-folder>   process one product now
     python intake.py watch                  process every new folder dropped in inbox/
-    python intake.py serve                  watch + HTTP endpoint (POST /products)
+    python intake.py serve                  watch + web front end at http://localhost:8080
     python intake.py tools                  list the MCP server's tools (connection check)
 """
 
@@ -22,10 +22,8 @@ import re
 import shutil
 import string
 import sys
-import threading
 import time
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import yaml
@@ -65,6 +63,7 @@ def load_prompts(prompts_dir):
             print(f"[prompts] skipping {file.name}: no 'prompt' field", file=sys.stderr)
             continue
         data.setdefault("name", file.stem)
+        data["file"] = file.name
         prompts.append(data)
     if not prompts:
         raise SystemExit(f"No prompts found in {prompts_dir}")
@@ -196,57 +195,81 @@ def mcp_command(cfg):
     return list(server["command"]) + list(server.get("extra_args") or [])
 
 
+def product_id(company, name):
+    return f"{slug(company)}__{slug(name)}"
+
+
+def save_summary(out_dir, summary):
+    tmp = out_dir / "summary.json.tmp"
+    tmp.write_text(json.dumps(summary, indent=2))
+    tmp.replace(out_dir / "summary.json")
+
+
 def process_product(folder, cfg, prompts=None):
     import anthropic
 
     product = load_product(folder)
     prompts = prompts or load_prompts(cfg["paths"]["prompts"])
-    out_dir = cfg["paths"]["outbox"] / f"{slug(product['company'])}__{slug(product['name'])}"
+    out_dir = cfg["paths"]["outbox"] / product_id(product["company"], product["name"])
     out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.glob("*.md"):
+        old.unlink()  # a resubmitted product replaces its previous answers
     print(f"[intake] {product['company']} / {product['name']}: "
           f"{len(product['texts'])} text docs, {len(product['pdfs'])} PDFs, {len(prompts)} prompts")
 
-    client = anthropic.Anthropic()
     summary = {
+        "id": out_dir.name,
         "company": product["company"],
         "product": product["name"],
+        "description": product["description"],
         "documents": [n for n, _ in product["texts"]] + [n for n, _ in product["pdfs"]],
+        "prompts": [p["name"] for p in prompts],
+        "status": "processing",
         "started_at": datetime.now(timezone.utc).isoformat(),
         "results": [],
     }
+    save_summary(out_dir, summary)
 
-    with StdioMCPClient(mcp_command(cfg), timeout=cfg["mcp_server"]["timeout_seconds"]) as mcp:
-        tools = [
-            {"name": t["name"], "description": t.get("description", ""),
-             "input_schema": t.get("inputSchema") or {"type": "object", "properties": {}}}
-            for t in mcp.list_tools()
-        ]
-        summary["mcp_server"] = mcp.server_info
-        print(f"[mcp] connected to {mcp.server_info.get('name', 'server')} with {len(tools)} tools")
+    try:
+        client = anthropic.Anthropic()
+        with StdioMCPClient(mcp_command(cfg), timeout=cfg["mcp_server"]["timeout_seconds"]) as mcp:
+            tools = [
+                {"name": t["name"], "description": t.get("description", ""),
+                 "input_schema": t.get("inputSchema") or {"type": "object", "properties": {}}}
+                for t in mcp.list_tools()
+            ]
+            summary["mcp_server"] = mcp.server_info
+            print(f"[mcp] connected to {mcp.server_info.get('name', 'server')} with {len(tools)} tools")
 
-        for prompt_def in prompts:
-            print(f"  [prompt] {prompt_def['name']}")
-            try:
-                text, trace, status = run_prompt(client, mcp, tools, product, prompt_def, cfg)
-            except anthropic.APIError as exc:
-                text, trace, status = f"Claude API error: {exc}", [], "error"
-            out_file = out_dir / f"{slug(prompt_def['name'])}.md"
-            out_file.write_text(
-                f"# {prompt_def['name']}\n\n"
-                f"_{product['company']} / {product['name']} - status: {status}_\n\n{text}\n"
-            )
-            summary["results"].append({
-                "prompt": prompt_def["name"], "status": status,
-                "output": out_file.name, "tool_calls": trace,
-            })
-
-    summary["finished_at"] = datetime.now(timezone.utc).isoformat()
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+            for prompt_def in prompts:
+                print(f"  [prompt] {prompt_def['name']}")
+                try:
+                    text, trace, status = run_prompt(client, mcp, tools, product, prompt_def, cfg)
+                except anthropic.APIError as exc:
+                    text, trace, status = f"Claude API error: {exc}", [], "error"
+                out_file = out_dir / f"{slug(prompt_def['name'])}.md"
+                out_file.write_text(
+                    f"# {prompt_def['name']}\n\n"
+                    f"_{product['company']} / {product['name']} - status: {status}_\n\n{text}\n"
+                )
+                summary["results"].append({
+                    "prompt": prompt_def["name"], "status": status,
+                    "output": out_file.name, "tool_calls": trace,
+                })
+                save_summary(out_dir, summary)
+        summary["status"] = "done"
+    except Exception as exc:
+        summary["status"] = "failed"
+        summary["error"] = str(exc)
+        raise
+    finally:
+        summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+        save_summary(out_dir, summary)
     print(f"[intake] done -> {out_dir}")
     return out_dir
 
 
-# -- watch / serve -------------------------------------------------------------
+# -- watch ---------------------------------------------------------------------
 
 def ready_products(inbox, settle_seconds):
     """Product folders with a product.yaml that have not changed for settle_seconds."""
@@ -277,72 +300,6 @@ def watch(cfg, stop_event=None):
         time.sleep(poll)
 
 
-def make_handler(cfg):
-    inbox, outbox = cfg["paths"]["inbox"], cfg["paths"]["outbox"]
-
-    class Handler(BaseHTTPRequestHandler):
-        def _json(self, code, body):
-            data = json.dumps(body, indent=2).encode()
-            self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def do_POST(self):
-            # Body: {"company", "name", "description",
-            #        "files": [{"name": "spec.yaml", "content": "..."} or {"name", "content_base64"}]}
-            if self.path.rstrip("/") != "/products":
-                return self._json(404, {"error": "POST to /products"})
-            try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-                company, name = body["company"], body["name"]
-            except (ValueError, KeyError):
-                return self._json(400, {"error": "JSON body with 'company' and 'name' is required"})
-
-            product_id = f"{slug(company)}__{slug(name)}"
-            staging = inbox / f".{product_id}.tmp"
-            shutil.rmtree(staging, ignore_errors=True)
-            staging.mkdir(parents=True)
-            for item in body.get("files", []):
-                filename = Path(str(item.get("name", ""))).name
-                if not filename or filename.startswith(".") or filename == "product.yaml":
-                    continue
-                if "content_base64" in item:
-                    (staging / filename).write_bytes(base64.b64decode(item["content_base64"]))
-                else:
-                    (staging / filename).write_text(str(item.get("content", "")), encoding="utf-8")
-            (staging / "product.yaml").write_text(yaml.safe_dump({
-                "company": company, "name": name, "description": body.get("description", ""),
-            }))
-            target = inbox / product_id
-            shutil.rmtree(target, ignore_errors=True)
-            staging.rename(target)  # appears in the inbox all at once
-            self._json(202, {"id": product_id, "status": "queued",
-                             "results": f"/products/{product_id}"})
-
-        def do_GET(self):
-            match = re.fullmatch(r"/products/([a-z0-9-]+__[a-z0-9-]+)/?", self.path)
-            if not match:
-                return self._json(404, {"error": "GET /products/<id>"})
-            summary = outbox / match.group(1) / "summary.json"
-            if not summary.exists():
-                return self._json(202, {"id": match.group(1), "status": "pending"})
-            result = json.loads(summary.read_text())
-            for item in result["results"]:
-                item["response"] = (summary.parent / item["output"]).read_text()
-            self._json(200, result)
-
-    return Handler
-
-
-def serve(cfg):
-    threading.Thread(target=watch, args=(cfg,), daemon=True).start()
-    host, port = cfg["server"]["host"], cfg["server"]["port"]
-    print(f"[serve] POST http://{host}:{port}/products  |  GET /products/<id>")
-    ThreadingHTTPServer((host, port), make_handler(cfg)).serve_forever()
-
-
 def list_tools(cfg):
     with StdioMCPClient(mcp_command(cfg), timeout=cfg["mcp_server"]["timeout_seconds"]) as mcp:
         print(f"Connected to {mcp.server_info}")
@@ -367,6 +324,7 @@ def main():
     elif args.command == "watch":
         watch(cfg)
     elif args.command == "serve":
+        from server import serve
         serve(cfg)
     elif args.command == "tools":
         list_tools(cfg)

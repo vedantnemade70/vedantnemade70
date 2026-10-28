@@ -65,5 +65,64 @@ class RunPromptTest(unittest.TestCase):
         self.assertIn("<product_documents>", first_user[0]["text"])
 
 
+class ServerApiTest(unittest.TestCase):
+    def setUp(self):
+        import json
+        import shutil
+        import tempfile
+        import threading
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+
+        import server
+
+        self.json, self.urllib = json, urllib.request
+        self.tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(APP_DIR / "prompts", self.tmp / "prompts")
+        self.cfg = intake.load_config(APP_DIR / "config.yaml")
+        for key in ("inbox", "outbox", "processed", "prompts"):
+            self.cfg["paths"][key] = self.tmp / key
+            self.cfg["paths"][key].mkdir(exist_ok=True)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(self.cfg))
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.httpd.server_port}"
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+
+    def call(self, method, path, body=None):
+        data = self.json.dumps(body).encode() if body is not None else None
+        req = self.urllib.Request(self.base + path, data=data, method=method,
+                                  headers={"Content-Type": "application/json"})
+        try:
+            with self.urllib.urlopen(req) as res:
+                return res.status, self.json.loads(res.read())
+        except self.urllib.HTTPError as err:
+            return err.code, self.json.loads(err.read())
+
+    def test_submit_product_and_list(self):
+        code, res = self.call("POST", "/api/products", {
+            "company": "Acme Fintech", "name": "PayLink",
+            "files": [{"name": "../../evil.yaml", "content": "openapi: 3.0.3"}]})
+        self.assertEqual((code, res["id"]), (202, "acme-fintech__paylink"))
+        folder = self.cfg["paths"]["inbox"] / "acme-fintech__paylink"
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["evil.yaml", "product.yaml"])
+        code, products = self.call("GET", "/api/products")
+        self.assertEqual(products[0]["status"], "queued")
+        self.assertEqual(self.call("GET", "/api/products/acme-fintech__paylink")[1]["status"], "queued")
+        self.assertEqual(self.call("POST", "/api/products", {"company": "x"})[0], 400)
+
+    def test_prompt_crud(self):
+        code, created = self.call("POST", "/api/prompts", {"name": "Pricing check", "prompt": "Cost of $product_name?"})
+        self.assertEqual((code, created["file"]), (201, "05_pricing_check.yaml"))
+        code, _ = self.call("PUT", f"/api/prompts/{created['file']}", {"name": "Pricing", "prompt": "Updated"})
+        self.assertEqual(code, 200)
+        prompts = self.call("GET", "/api/prompts")[1]
+        self.assertEqual(prompts[-1]["prompt"].strip(), "Updated")
+        self.assertEqual(self.call("PUT", "/api/prompts/..%2Fconfig.yaml", {"name": "a", "prompt": "b"})[0], 404)
+        self.assertEqual(self.call("DELETE", f"/api/prompts/{created['file']}")[0], 200)
+        self.assertEqual(len(self.call("GET", "/api/prompts")[1]), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
