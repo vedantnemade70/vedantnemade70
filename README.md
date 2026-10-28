@@ -32,3 +32,6 @@ After changing `index.html`, `style.css`, `script.js` or `assets/`, run `python3
 - Projects: edit the `<article class="project">` blocks in `index.html`. `data-type` controls which filter button shows the project (`asphalt`, `concrete`, `highway`).
 - Colors: change `--orange` and `--asphalt` at the top of `style.css`.
 - Resume: replace `assets/Vedant_Nemade_Resume.docx`. A PDF works in more browsers, so if you switch to one, update the two download links.
+
+## Other projects
+- [`mastercard-docs-agent/`](mastercard-docs-agent/): a LangGraph agent that uses the Mastercard Developers MCP server to compare Mastercard products (terminology, API security, authentication, fields).
