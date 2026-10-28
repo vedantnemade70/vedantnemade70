@@ -1,0 +1,9 @@
+name: product_overview
+description: Summarise the new product and map it to relevant Mastercard services.
+prompt: |
+  A new product has arrived from $company: "$product_name".
+  $product_description
+
+  1. Summarise what the product does, who it is for, and its main capabilities.
+  2. Use the Mastercard Developers tools to find the Mastercard services and
+     APIs most relevant to this product. Name each service and explain why it fits.

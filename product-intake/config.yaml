@@ -1,0 +1,40 @@
+# How to start the Mastercard Developers MCP server. The app launches this
+# command as a child process and talks MCP JSON-RPC over its stdin/stdout.
+# Any stdio MCP server works here, e.g. ["node", "/path/to/dist/index.js"].
+mcp_server:
+  command: ["npx", "-y", "@mastercard/developers-mcp"]
+  # Optional: focus the server on one service or one API spec, e.g.
+  #   - "--service=https://developer.mastercard.com/open-finance-us/documentation/"
+  #   - "--api-specification=https://static.developer.mastercard.com/content/match/swagger/match-pro.yaml"
+  extra_args: []
+  timeout_seconds: 120
+
+# The model that answers the prompts. Any OpenAI-compatible endpoint works:
+# OpenRouter (default) or a local Ollama server (base_url: http://localhost:11434/v1,
+# api_key_env: "", model: e.g. qwen2.5:14b).
+llm:
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY   # name of the environment variable holding the key
+  # Free models that support tool calling. OpenRouter's free list changes often:
+  # run `python intake.py models` to see the current ones and update these.
+  model: openai/gpt-oss-120b:free
+  fallback_models:                  # tried in order if the main model fails or is rate limited
+    - qwen/qwen3-next-80b-a3b-instruct:free
+    - google/gemma-4-31b-it:free
+  max_tokens: 8000
+  max_tool_rounds: 25               # safety cap on MCP tool calls per prompt
+  timeout_seconds: 300
+  max_retries: 4                    # retries on rate limits (HTTP 429) and server errors
+
+paths:
+  inbox: inbox              # drop a new product folder here
+  outbox: outbox            # responses are written here
+  processed: processed      # product folders move here once done
+  prompts: prompts          # your predefined prompts (*.yaml)
+
+watch:
+  poll_seconds: 10
+
+server:
+  host: 127.0.0.1
+  port: 8080
