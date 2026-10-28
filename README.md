@@ -32,3 +32,6 @@ After changing `index.html`, `style.css`, `script.js` or `assets/`, run `python3
 - Projects: edit the `<article class="project">` blocks in `index.html`. `data-type` controls which filter button shows the project (`asphalt`, `concrete`, `highway`).
 - Colors: change `--orange` and `--asphalt` at the top of `style.css`.
 - Resume: replace `assets/Vedant_Nemade_Resume.docx`. A PDF works in more browsers, so if you switch to one, update the two download links.
+
+## Other projects in this repo
+- [`product-intake/`](product-intake/): sends new product docs and API specs to the Mastercard MCP server and runs predefined prompts on them.

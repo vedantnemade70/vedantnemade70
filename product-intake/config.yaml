@@ -1,0 +1,29 @@
+# How to start the Mastercard Developers MCP server. The app launches this
+# command as a child process and talks MCP JSON-RPC over its stdin/stdout.
+# Any stdio MCP server works here, e.g. ["node", "/path/to/dist/index.js"].
+mcp_server:
+  command: ["npx", "-y", "@mastercard/developers-mcp"]
+  # Optional: focus the server on one service or one API spec, e.g.
+  #   - "--service=https://developer.mastercard.com/open-finance-us/documentation/"
+  #   - "--api-specification=https://static.developer.mastercard.com/content/match/swagger/match-pro.yaml"
+  extra_args: []
+  timeout_seconds: 120
+
+claude:
+  model: claude-opus-5-5
+  effort: high              # low | medium | high | xhigh | max
+  max_tokens: 16000
+  max_tool_rounds: 25       # safety cap on MCP tool calls per prompt
+
+paths:
+  inbox: inbox              # drop a new product folder here
+  outbox: outbox            # responses are written here
+  processed: processed      # product folders move here once done
+  prompts: prompts          # your predefined prompts (*.yaml)
+
+watch:
+  poll_seconds: 10
+
+server:
+  host: 127.0.0.1
+  port: 8080

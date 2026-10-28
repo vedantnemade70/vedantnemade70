@@ -1,0 +1,8 @@
+name: api_mapping
+description: Map the product's API endpoints to Mastercard API operations.
+prompt: |
+  Compare the API specification(s) of $company's product "$product_name" with
+  Mastercard APIs. For each relevant endpoint in the product's spec, look up the
+  closest Mastercard API operation (method + path) with the Mastercard
+  Developers tools, and give a table:
+  | Product endpoint | Mastercard operation | Service | Notes / gaps |

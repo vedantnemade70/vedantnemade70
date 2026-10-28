@@ -1,0 +1,7 @@
+name: integration_plan
+description: Step-by-step plan to integrate the product with Mastercard.
+prompt: |
+  Write an integration plan for connecting $company's "$product_name" to the
+  Mastercard services you consider relevant. Include authentication (check the
+  OAuth 1.0a / OAuth 2.0 integration guides with the tools), required
+  onboarding steps, the order of API calls, sandbox testing, and the main risks.

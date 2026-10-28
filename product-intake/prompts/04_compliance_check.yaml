@@ -1,0 +1,8 @@
+name: compliance_check
+description: Flag security and compliance gaps in the product documentation.
+prompt: |
+  Review the documentation of $company's "$product_name" against what
+  Mastercard's documentation requires for the services it would use
+  (authentication, data handling, encryption, tokenization). List every gap
+  you find, how serious it is (high / medium / low), and how to fix it.
+  Only state requirements you confirmed with the Mastercard Developers tools.

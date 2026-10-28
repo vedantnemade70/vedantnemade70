@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: PayLink API
+  version: 1.0.0
+paths:
+  /links:
+    post:
+      summary: Create a payment link
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: {type: integer, description: Amount in minor units}
+                currency: {type: string, example: USD}
+                customer_email: {type: string}
+      responses:
+        "201": {description: Link created}
+  /links/{id}/pay:
+    post:
+      summary: Pay a link with a card
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pan: {type: string}
+                expiry: {type: string}
+                cvc: {type: string}
+      responses:
+        "200": {description: Payment authorised}
+  /payments/{id}/refund:
+    post:
+      summary: Refund a payment
+      responses:
+        "200": {description: Refund issued}
